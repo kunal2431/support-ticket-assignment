@@ -1,15 +1,41 @@
+version: "3.9"
+
 services:
   db:
-    image: postgres:15
-    container_name: flowtel-db
+    image: postgres:16-alpine
+    container_name: support-ticket-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: supportdb
+      POSTGRES_DB: support_tickets
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
+      # run our SQL on first container startup
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+
+  backend:
+    build: ./backend
+    container_name: support-ticket-backend
+    depends_on:
+      - db
+    environment:
+      # we’ll use this later in the FastAPI app
+      DATABASE_URL: postgres://app:app@db:5432/support_tickets
+    ports:
+      - "8000:8000"
+    # we’ll add command / volumes when we implement the backend
+
+  frontend:
+    build: ./frontend
+    container_name: support-ticket-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    # we’ll wire the dev / build command later
 
 volumes:
-  postgres_data:
+  db_data:
