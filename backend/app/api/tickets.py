@@ -9,6 +9,11 @@ from app.services.db import get_db
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
 
+from app.repositories.tickets import create_tickets
+from app.services.db import get_db
+
+router = APIRouter(prefix="/api/tickets")
+
 @router.post("/", response_model=list[TicketRead])
 def create_tickets_endpoint(
         ticket_list: list[TicketCreate],
@@ -23,3 +28,4 @@ def list_tickets_endpoint(
 ):
     # returns all tickets ordered by id asc
     return ticket_repo.get_by_ids_or_all(db, ids=None)
+    return create_tickets(db, ticket_list)
