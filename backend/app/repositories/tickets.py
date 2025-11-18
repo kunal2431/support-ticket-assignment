@@ -1,11 +1,11 @@
+# app/repositories/tickets.py
 from typing import Iterable, List, Optional
 
 from sqlalchemy.orm import Session
+from app import models, schemas
 
-from .. import models, schemas
 
-
-def create_many(
+def create_tickets(
         db: Session,
         items: List[schemas.TicketCreate],
 ) -> List[models.Ticket]:
