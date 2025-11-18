@@ -1,18 +1,25 @@
-from typing import List
+# app/api/tickets.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from .. import schemas
-from ..services.db import get_db
-from ..repositories import tickets as ticket_repo
+from app.schemas import TicketCreate, TicketRead
+from app.repositories import tickets as ticket_repo
+from app.services.db import get_db
 
-router = APIRouter(prefix="/api", tags=["tickets"])
+router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
 
-@router.post("/tickets", response_model=List[schemas.TicketRead])
-def create_tickets(
-        payload: List[schemas.TicketCreate],
+@router.post("/", response_model=list[TicketRead])
+def create_tickets_endpoint(
+        ticket_list: list[TicketCreate],
         db: Session = Depends(get_db),
 ):
-    created = ticket_repo.create_many(db, payload)
-    return created
+    return ticket_repo.create_many(db, ticket_list)
+
+
+@router.get("/", response_model=list[TicketRead])
+def list_tickets_endpoint(
+        db: Session = Depends(get_db),
+):
+    # returns all tickets ordered by id asc
+    return ticket_repo.get_by_ids_or_all(db, ids=None)
