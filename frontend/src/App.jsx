@@ -1,393 +1,485 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-// Backend base URL (can override with Vite env if you want)
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 function App() {
   const [tickets, setTickets] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [isSavingTicket, setIsSavingTicket] = useState(false);
-
-  const [selectedIds, setSelectedIds] = useState(new Set());
-
   const [analysis, setAnalysis] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const [error, setError] = useState("");
+  // --- helpers ---------------------------------------------------
 
-  // -------- helpers --------
-  const asArray = (value) => Array.isArray(value) ? value : [];
-
-  const toggleSelected = (id) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  // -------- load initial data --------
-  useEffect(() => {
-    const loadInitial = async () => {
-      try {
-        setError("");
-
-        // 1) Load tickets
-        const tRes = await fetch(`${API_BASE}/api/tickets`);
-        if (tRes.ok) {
-          const tData = await tRes.json();
-          setTickets(asArray(tData));
-        }
-
-        // 2) Load latest analysis (optional, fine if none yet)
-        const aRes = await fetch(`${API_BASE}/api/analysis/latest`);
-        if (aRes.ok) {
-          const aData = await aRes.json();
-          if (aData && aData.analysis_run) {
-            setAnalysis(aData);
-          }
-        }
-      } catch (e) {
-        console.error(e);
-        setError("Failed to load initial data.");
-      }
-    };
-
-    loadInitial();
-  }, []);
-
-  // -------- create ticket --------
-  const handleAddTicket = async (e) => {
-    e.preventDefault();
-    if (!title.trim() || !description.trim()) {
-      setError("Title and description are required.");
-      return;
-    }
-
-    setError("");
-    setIsSavingTicket(true);
+  const loadTickets = async () => {
     try {
-      const payload = [{ title: title.trim(), description: description.trim() }];
-
-      const res = await fetch(`${API_BASE}/api/tickets`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Create failed: ${res.status}`);
-      }
-
+      const res = await fetch(`${API_BASE}/api/tickets`);
+      if (!res.ok) throw new Error("Failed to load tickets");
       const data = await res.json();
-      const created = asArray(data);
-
-      setTickets((prev) => [...prev, ...created]);
-      setTitle("");
-      setDescription("");
+      setTickets(data);
     } catch (e) {
       console.error(e);
-      setError("Failed to create ticket.");
-    } finally {
-      setIsSavingTicket(false);
+      setError("Could not load tickets");
     }
   };
 
-  // -------- run analysis --------
-  const handleAnalyze = async () => {
-    setError("");
-    setIsAnalyzing(true);
+  const loadLatestAnalysis = async () => {
     try {
-      const idsArray = Array.from(selectedIds);
-      const hasSelection = idsArray.length > 0;
-
-      const body = hasSelection ? { ticketIds: idsArray } : {};
-
-      const res = await fetch(`${API_BASE}/api/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // If no selection, still send {}, FastAPI will treat as optional body
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Analyze failed: ${res.status}`);
-      }
-
+      const res = await fetch(`${API_BASE}/api/analysis/latest`);
+      if (!res.ok) return; // it's fine if there is no analysis yet
       const data = await res.json();
       setAnalysis(data);
     } catch (e) {
       console.error(e);
-      setError("Failed to run analysis.");
+    }
+  };
+
+  useEffect(() => {
+    loadTickets();
+    loadLatestAnalysis();
+  }, []);
+
+  const handleAddTicket = async (e) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!title.trim() || !description.trim()) {
+      setError("Please fill in both title and description.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([{ title, description }]),
+      });
+      if (!res.ok) throw new Error("Failed to create ticket");
+      const data = await res.json();
+      // append returned tickets
+      setTickets((prev) => [...prev, ...data]);
+      setTitle("");
+      setDescription("");
+    } catch (e) {
+      console.error(e);
+      setError("Could not create ticket");
+    }
+  };
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleAnalyze = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const body =
+        selectedIds.size > 0 ? { ticketIds: Array.from(selectedIds) } : {};
+
+      const res = await fetch(`${API_BASE}/api/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: Object.keys(body).length ? JSON.stringify(body) : null,
+      });
+      if (!res.ok) throw new Error("Failed to run analysis");
+      const data = await res.json();
+      setAnalysis(data);
+      // refresh tickets (ids might have grown)
+      await loadTickets();
+    } catch (e) {
+      console.error(e);
+      setError("Could not run analysis");
     } finally {
-      setIsAnalyzing(false);
+      setLoading(false);
     }
   };
 
-  // -------- UI pieces --------
-  const renderTicketList = () => {
-    if (!tickets.length) {
-      return <p className="muted">No tickets yet.</p>;
-    }
+  // Determine whether this run used LLM or rules
+  const modeLabel = useMemo(() => {
+    if (!analysis?.analysis_run?.summary) return null;
+    const s = analysis.analysis_run.summary.toLowerCase();
+    return s.includes("llm mode") ? "LLM" : "Rule-based";
+  }, [analysis]);
 
-    return (
-      <ul className="ticket-list">
-        {tickets.map((t) => {
-          const shortDesc =
-            t.description.length > 80
-              ? t.description.slice(0, 80) + "..."
-              : t.description;
+  // --- UI --------------------------------------------------------
 
-          const checked = selectedIds.has(t.id);
-
-          return (
-            <li key={t.id} className="ticket-row">
-              <label className="ticket-checkbox">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleSelected(t.id)}
-                />
-                <span className="ticket-title">{t.title}</span>
-              </label>
-              <span className="ticket-desc">{shortDesc}</span>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  };
-
-  const renderAnalysis = () => {
-    if (!analysis || !analysis.analysis_run) {
-      return <p className="muted">No analysis has been run yet.</p>;
-    }
-
-    const run = analysis.analysis_run;
-    const items = asArray(analysis.ticket_analysis);
-
-    return (
-      <div className="analysis-panel">
-        <h3>Latest analysis</h3>
-        <p className="muted">
-          Run #{run.id} •{" "}
-          {new Date(run.created_at).toLocaleString(undefined, {
-            dateStyle: "short",
-            timeStyle: "short",
-          })}
-        </p>
-        {run.summary && <p className="summary">{run.summary}</p>}
-
-        <h4>Per-ticket results</h4>
-        {items.length === 0 && (
-          <p className="muted">No per-ticket results found.</p>
-        )}
-        <ul className="analysis-list">
-          {items.map((row) => (
-            <li key={row.id} className="analysis-row">
-              <div className="analysis-header">
-                <strong>{row.ticket?.title ?? `Ticket #${row.ticket_id}`}</strong>
-              </div>
-              <div className="analysis-meta">
-                <span className="pill pill-category">{row.category}</span>
-                <span className="pill pill-priority">{row.priority}</span>
-              </div>
-              {row.notes && <p className="notes">{row.notes}</p>}
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  };
-
-  // -------- render root --------
   return (
-    <div className="page">
-      <header>
-        <h1>Support Ticket Analyzer</h1>
-      </header>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "radial-gradient(circle at top, #333, #000)",
+        color: "#f5f5f5",
+        padding: "32px",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      }}
+    >
+      <h1 style={{ fontSize: "32px", marginBottom: "24px", fontWeight: 700 }}>
+        Support Ticket Analyzer
+      </h1>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div
+          style={{
+            marginBottom: "16px",
+            padding: "8px 12px",
+            borderRadius: "6px",
+            background: "#4b1d1d",
+            border: "1px solid #b94a4a",
+            fontSize: "14px",
+          }}
+        >
+          {error}
+        </div>
+      )}
 
-      <main className="layout">
-        {/* Left: create + list tickets */}
-        <section className="card">
-          <h2>Create tickets</h2>
-          <form onSubmit={handleAddTicket} className="ticket-form">
-            <label>
-              Title
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.1fr 1.4fr",
+          gap: "24px",
+        }}
+      >
+        {/* Left: create + list */}
+        <div
+          style={{
+            background: "rgba(24,24,24,0.95)",
+            borderRadius: "10px",
+            padding: "20px",
+            boxShadow: "0 0 25px rgba(0,0,0,0.5)",
+          }}
+        >
+          <h2 style={{ marginBottom: "12px", fontSize: "18px" }}>Create ticket</h2>
+
+          <form onSubmit={handleAddTicket} style={{ marginBottom: "20px" }}>
+            <div style={{ marginBottom: "10px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "13px",
+                  color: "#ccc",
+                }}
+              >
+                Title:
+              </label>
               <input
+                type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Login issue"
+                style={{
+                  width: "100%",
+                  borderRadius: "6px",
+                  border: "1px solid #555",
+                  padding: "8px 10px",
+                  background: "#111",
+                  color: "#f5f5f5",
+                  fontSize: "14px",
+                }}
+                placeholder="e.g., Login issue"
               />
-            </label>
+            </div>
 
-            <label>
-              Description
+            <div style={{ marginBottom: "10px" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "4px",
+                  fontSize: "13px",
+                  color: "#ccc",
+                }}
+              >
+                Description:
+              </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="User cannot log in with correct credentials"
                 rows={3}
+                style={{
+                  width: "100%",
+                  borderRadius: "6px",
+                  border: "1px solid #555",
+                  padding: "8px 10px",
+                  background: "#111",
+                  color: "#f5f5f5",
+                  fontSize: "14px",
+                  resize: "vertical",
+                }}
+                placeholder="User cannot log in with correct credentials"
               />
-            </label>
+            </div>
 
-            <button type="submit" disabled={isSavingTicket}>
-              {isSavingTicket ? "Adding..." : "Add ticket"}
+            <button
+              type="submit"
+              style={{
+                marginTop: "6px",
+                padding: "8px 16px",
+                borderRadius: "999px",
+                border: "none",
+                background:
+                  "linear-gradient(135deg, #ff7a18 0%, #af002d 50%, #319197 100%)",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Add ticket
             </button>
           </form>
 
-          <h3>Existing tickets</h3>
-          <p className="muted small">
-            Select specific tickets to analyze, or leave all unchecked to
-            analyze everything.
-          </p>
-          {renderTicketList()}
-        </section>
+          <div
+            style={{
+              borderTop: "1px solid #333",
+              marginTop: "10px",
+              paddingTop: "10px",
+              fontSize: "13px",
+              color: "#ccc",
+            }}
+          >
+            <p style={{ marginBottom: "8px" }}>
+              Select specific tickets to analyze, or leave all unchecked to
+              analyze everything.
+            </p>
 
-        {/* Right: analyze + show results */}
-        <section className="card">
-          <h2>Analysis</h2>
-          <button onClick={handleAnalyze} disabled={isAnalyzing || !tickets.length}>
-            {isAnalyzing ? "Analyzing..." : "Analyze tickets"}
-          </button>
-          {isAnalyzing && (
-            <p className="muted small">Running LangGraph analysis…</p>
+            <div
+              style={{
+                maxHeight: "260px",
+                overflowY: "auto",
+                paddingRight: "8px",
+              }}
+            >
+              {tickets.map((t) => (
+                <label
+                  key={t.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                    marginBottom: "6px",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(t.id)}
+                    onChange={() => toggleSelected(t.id)}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{t.title}</div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#aaa",
+                        maxWidth: "280px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {t.description}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#777",
+                        marginTop: "2px",
+                      }}
+                    >
+                      Ticket ID: {t.id}
+                    </div>
+                  </div>
+                </label>
+              ))}
+              {tickets.length === 0 && (
+                <div style={{ fontSize: "13px", color: "#777" }}>
+                  No tickets yet. Create one above.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: analysis */}
+        <div
+          style={{
+            background: "rgba(24,24,24,0.95)",
+            borderRadius: "10px",
+            padding: "20px",
+            boxShadow: "0 0 25px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "12px",
+            }}
+          >
+            <h2 style={{ fontSize: "18px" }}>Analyze tickets</h2>
+            <button
+              onClick={handleAnalyze}
+              disabled={loading || tickets.length === 0}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "999px",
+                border: "none",
+                background: loading ? "#444" : "#111",
+                color: "#fff",
+                cursor: loading ? "default" : "pointer",
+                boxShadow: "0 0 0 1px #555",
+              }}
+            >
+              {loading ? "Analyzing..." : "Analyze tickets"}
+            </button>
+          </div>
+
+          {analysis?.analysis_run && (
+            <div
+              style={{
+                marginBottom: "14px",
+                fontSize: "13px",
+                color: "#ccc",
+                borderBottom: "1px solid #333",
+                paddingBottom: "8px",
+              }}
+            >
+              <div>
+                <strong>
+                  Run #{analysis.analysis_run.id} ·{" "}
+                  {new Date(
+                    analysis.analysis_run.created_at
+                  ).toLocaleString()}
+                </strong>
+              </div>
+              {modeLabel && (
+                <div style={{ marginTop: "4px" }}>
+                  Mode:{" "}
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                      fontSize: "11px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.03em",
+                      background:
+                        modeLabel === "LLM" ? "#1c3b2b" : "#3b2f1c",
+                      border:
+                        modeLabel === "LLM"
+                          ? "1px solid #3cbf7c"
+                          : "1px solid #f0b95c",
+                    }}
+                  >
+                    {modeLabel}
+                  </span>
+                </div>
+              )}
+              <div style={{ marginTop: "6px" }}>
+                {analysis.analysis_run.summary}
+              </div>
+            </div>
           )}
 
-          <div className="divider" />
+          <div
+            style={{
+              maxHeight: "380px",
+              overflowY: "auto",
+              paddingRight: "8px",
+            }}
+          >
+            {analysis?.ticket_analysis?.length ? (
+              analysis.ticket_analysis.map((row) => (
+                <div
+                  key={row.id}
+                  style={{
+                    borderRadius: "8px",
+                    border: "1px solid #333",
+                    padding: "10px 12px",
+                    marginBottom: "10px",
+                    background: "#111",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <div style={{ fontSize: "13px", color: "#888" }}>
+                      Ticket ID: <strong>{row.ticket_id}</strong>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          fontSize: "11px",
+                          border: "1px solid #666",
+                          textTransform: "lowercase",
+                        }}
+                      >
+                        {row.category}
+                      </span>
+                      <span
+                        style={{
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          fontSize: "11px",
+                          border: "1px solid #666",
+                          textTransform: "lowercase",
+                        }}
+                      >
+                        priority: {row.priority}
+                      </span>
+                    </div>
+                  </div>
 
-          {renderAnalysis()}
-        </section>
-      </main>
+                  <div style={{ fontWeight: 500, marginBottom: "2px" }}>
+                    {row.ticket?.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#aaa",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    {row.ticket?.description}
+                  </div>
 
-      {/* Extremely light inline style so you don't have to touch CSS if you don't want */}
-      <style>{`
-        .page {
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 1.5rem;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
-        header h1 {
-          margin-bottom: 1rem;
-        }
-        .layout {
-          display: grid;
-          grid-template-columns: 1.1fr 1.2fr;
-          gap: 1.5rem;
-        }
-        .card {
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          padding: 1rem 1.25rem;
-          background: #fafafa;
-        }
-        .ticket-form label {
-          display: block;
-          margin-bottom: 0.75rem;
-        }
-        .ticket-form input,
-        .ticket-form textarea {
-          width: 100%;
-          box-sizing: border-box;
-          margin-top: 0.25rem;
-          padding: 0.4rem 0.5rem;
-        }
-        .ticket-form button {
-          margin-top: 0.5rem;
-        }
-        .ticket-list {
-          list-style: none;
-          padding: 0;
-          margin: 0.5rem 0 0;
-        }
-        .ticket-row {
-          border-bottom: 1px solid #e3e3e3;
-          padding: 0.5rem 0;
-        }
-        .ticket-checkbox {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-weight: 500;
-        }
-        .ticket-desc {
-          display: block;
-          font-size: 0.85rem;
-          color: #555;
-          margin-left: 1.5rem;
-        }
-        .analysis-panel {
-          margin-top: 1rem;
-        }
-        .summary {
-          margin: 0.5rem 0 1rem;
-        }
-        .analysis-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-        .analysis-row {
-          border-bottom: 1px solid #e3e3e3;
-          padding: 0.6rem 0;
-        }
-        .analysis-meta {
-          display: flex;
-          gap: 0.5rem;
-          margin: 0.25rem 0;
-        }
-        .pill {
-          display: inline-block;
-          padding: 0.1rem 0.5rem;
-          border-radius: 999px;
-          font-size: 0.75rem;
-        }
-        .pill-category {
-          background: #e0f2fe;
-          color: #075985;
-        }
-        .pill-priority {
-          background: #fee2e2;
-          color: #b91c1c;
-        }
-        .notes {
-          font-size: 0.9rem;
-          color: #333;
-        }
-        .muted {
-          color: #666;
-        }
-        .small {
-          font-size: 0.8rem;
-        }
-        .divider {
-          height: 1px;
-          background: #e1e1e1;
-          margin: 1rem 0;
-        }
-        .error {
-          background: #fee2e2;
-          border: 1px solid #fecaca;
-          color: #b91c1c;
-          padding: 0.5rem 0.75rem;
-          border-radius: 6px;
-          margin-bottom: 1rem;
-        }
-        @media (max-width: 800px) {
-          .layout {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
+                  {row.notes && (
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#c7e3ff",
+                        borderTop: "1px dashed #333",
+                        paddingTop: "6px",
+                      }}
+                    >
+                      {row.notes}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: "13px", color: "#777" }}>
+                No analysis results yet. Create a ticket and click{" "}
+                <strong>Analyze tickets</strong>.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
