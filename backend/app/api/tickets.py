@@ -9,7 +9,7 @@ from app.services.db import get_db
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
 
-from app.repositories.tickets import create_tickets
+from app.repositories.tickets import create_many
 from app.services.db import get_db
 
 router = APIRouter(prefix="/api/tickets")
