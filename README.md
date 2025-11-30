@@ -1,14 +1,3 @@
-# Support Ticket Analyzer
-
-Hello!! I'm **Kunal Sangurmath**, with **3+ years of software engineering experience** and a **Master of Science in Computer Science**.
-
-I am really interested in the **Founding Engineer role at Flowtel**, and this project demonstrates my ability to design, architect, and deliver full-stack, AI-powered systems with strong reliability, clean abstractions, and production-ready Docker infrastructure.
-
-**LinkedIn:** https://www.linkedin.com/in/kunalsangurmath  
-**GitHub:** https://github.com/kunal2431  
-
----
-
 # Support Ticket Analyzer — Full Stack AI Application
 
 A fully containerized support ticket management and analysis system using:
@@ -301,28 +290,3 @@ support-ticket-analyzer/
 
 ---
 
-## 6. Time Spent & Next Steps
-
-I spent **3–4 hours** building this solution end-to-end, including:
-
-- Designing backend models  
-- FastAPI REST implementation  
-- React frontend with UI panels  
-- Docker Compose orchestration  
-- LangGraph workflow + LLM integration  
-- Rule-based fallback  
-- Debugging and containerizing everything  
-- Writing documentation  
-
-With more time, I would focus on:
-
-- Observability (logs/metrics)
-- Robust LLM error handling  
-- Production deployment  
-- Better UI/UX polish  
-- Maintaining multi-tenant support  
-
----
-
-Thank you for reviewing my submission!  
-I'm excited about the opportunity to contribute as a **Founding Engineer at Flowtel**.
